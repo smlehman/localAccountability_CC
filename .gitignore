@@ -47,3 +47,5 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+.Rproj.user.Rhistory.RData.Ruserdatadata**/data**/**/data.DS_Store.httr-oauthdata_raw*.fst*.rds**/*.fst**/*.rds**/*.db**/*.ini**/*.xlsx
