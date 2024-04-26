@@ -670,14 +670,14 @@ schoolsList <- reactive({
   output$schoolSelect_r <- renderUI({
     schoolList <- schoolsList()
     
-    selectInput(inputId = "schoolSelect_survey",
+    selectInput(inputId = "schoolSelect_rating",
                 label = "Select a school",
                 choices = schoolList)
     
   })
   
 output$ratinglong <- renderGirafe({
-  school1 <- input$schoolSelect_survey
+  school1 <- input$schoolSelect_rating
   colorScale <- input$surveyColor_btn
 
   validate(need(length(input$yearSelect)>0, "You must select at least one year."))
