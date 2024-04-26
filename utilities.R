@@ -54,7 +54,8 @@ schoolsTable <-  tibble::tribble(
                            "Harrison School",            3802L,       "Harrison",        "K-8",
   "Lincoln School of Science and Technology",            5166L,        "Lincoln", "elementary",
                 "McKinley Elementary School",            5704L,       "McKinley", "elementary",
-              "Washington Elementary School",            9248L,     "Washington", "elementary"
+              "Washington Elementary School",            9248L,     "Washington", "elementary",
+  "Mount View Core Knowledge Charter School",            6752L,     "Mount View",       "K-8"
   ) %>% 
   mutate(cdeSchoolNumber = as.character(cdeSchoolNumber)) %>% 
   arrange(schoolName)
