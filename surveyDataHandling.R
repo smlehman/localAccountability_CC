@@ -33,7 +33,9 @@ library(googledrive)
 
 ### load the google table with survey and rating sheet links
 drive_auth()
-gs4_auth() ## choose 0 and reauthorize if your're getting blocked
+
+
+gs4_auth() ## choose 0 and reauthorize if you're getting blocked
 
 
 # 
@@ -55,6 +57,8 @@ surveylookup <- readRDS("data/surveylookup.rds")
 ### same basic funtion as in create_surveyIDs_fun.R
 source("create_surveyIDs_fun.R", local = T)
 source("utilities.R",local = T)
+schoolinfo <- schoolsTable %>% 
+  select(cdeSchoolNumber, edLevel, schoolName, schoolNameShort)
 
 #find current EndYear
 if(lubridate::week(Sys.Date())<33){ ##week 33 is mid-August
@@ -64,33 +68,54 @@ if(lubridate::week(Sys.Date())<33){ ##week 33 is mid-August
 ## create surveyIDs
 #' Title create_surveyID
 #'  This creates a unique id for surveys.
-#' @param data -- the surveylookup table
+#' @param data -- new entries to be added to the surveylookup table
+#' @param lookupTable -- the surveylookup table 
 #'
 #' @return -- a table with a unique ID for each survey that didn't have one
 #' @export
 #'
 #' @examples
 #' create_surveyID(surveylookup)
-create_surveyID <- function(data) {
+create_surveyID <- function(data, lookupTable = surveylookup) {
   print("inside create_surveyID function")
   
+  #debugging values
+  # data <- surveylookup_wNew #-- before using create_surveyID in the pipe
+  # lookupTable <- surveylookup
+  
   #find largest ID
-  if(sum(is.na(data$surveyID)) == length(data$surveyID)){
+  if(sum(is.na(lookupTable$surveyID)) == length(lookupTable$surveyID)){
     maxID <- 0
   } else {
-    maxID <- max(data$surveyID, na.rm = T)
+    maxID <- max(lookupTable$surveyID, na.rm = T)
   }
   # print("max ID = ")
   # print(maxID)
-  qs_WO_surveyIDs <- data %>% 
-    filter(is.na(surveyID)) %>% 
-    mutate(noID_counter = row_number(),
-           surveyID = noID_counter + maxID) %>% 
-    select(-noID_counter) 
+  #find surveys matching incoming surveys
+  naturalKey <- c("cdeSchoolNumber", "respondents", "type", "endYear", "edLevel")
+  dups <- lookupTable %>% 
+    semi_join(data, by = naturalKey) %>%    # find duplicates so we can grab their surveyIDs
+    select(all_of(naturalKey), surveyID)
+  
+  #drop the dups from surveyLookup
+  lookupNoDups <- lookupTable %>% 
+    anti_join(dups, by = "surveyID")
+ 
+  #join existing surveyID to entries replacing dups + bind old rows
+  data_wReplacedIDs <- data %>% 
+    left_join(dups, by = naturalKey) %>%  #this will add the existing id numbers to new entries
+    filter(!is.na(surveyID))
+  
   
   updatedlookup <- data %>% 
-    anti_join(select(qs_WO_surveyIDs, -surveyID)) %>%  # remove surveyIDs because otherwise the antiJoin won't work  --this drops the entries that have updated surveyIDs
-    bind_rows(qs_WO_surveyIDs)
+    anti_join(dups, by = naturalKey) %>% 
+    mutate(noID_counter = row_number(),
+           surveyID = noID_counter + maxID) %>% 
+    select(-noID_counter) %>% ## new data now has surveyID
+    bind_rows(lookupNoDups) %>% ## add old surveylookup data
+    bind_rows(data_wReplacedIDs)  ## add old surveylookup data with refreshed links and 
+  
+
   
   ## test for distinct surveyID values
   if(length(unique(updatedlookup$surveyID)) == length(updatedlookup$surveyID)){
@@ -116,10 +141,8 @@ create_surveyID <- function(data) {
 
 ####### ADDING RATINGS (or SURVEYS) to surveylookup ##########
 ## get info for populating surveylookup
-#sourcing utilities will load schoolsTable
-source("utilities.R", local = TRUE)
-schoolinfo <- schoolsTable %>% 
-  select(cdeSchoolNumber, edLevel, schoolName, schoolNameShort)
+
+
 
 ## This is a manual part. Ensure that everything is correct or things will go wrong.
 ## The simplest way to do this is to create a table in a spreadsheet and then convert it to an 
@@ -136,59 +159,90 @@ schoolinfo <- schoolsTable %>%
 # type: one of c("survey", "rating")
 # final: binary (1/0) whether the file is a final file or an intermediate file (intermediate files are not loaded in the current code)
 ### datapasta in the table you've created in a spreadsheet
-# NOTE:  Sometimes links have a combination of characters that cause datapasta to error out.  In those cases, just paste the link in after datapasta-ing it below (You'll replace everything inside the tibble::tribble() function with the datapasta output)
 
-##EXAMPLE __________________________________
-surveylookup_wNew <- tibble::tribble(
-                           ~school_fromFileName,                                                                                                  ~link, ~cdeSchoolNumber, ~respondents,    ~type, ~endYear, ~final,
-                                         "CCMS", "https://docs.google.com/spreadsheets/d/1JRC6fqYbpsmFXBp-WlhJfio0MF-MlpIJaUpAW5u3MbM/edit?usp=sharing",            1262L,     "raters", "rating",    2020L,     1L,
-                                          "CES", "https://docs.google.com/spreadsheets/d/1kZu2S7eE_ziMHleY4EkvRc31ues85BrwwJEFZSETma4/edit?usp=sharing",            7950L,     "raters", "rating",    2020L,     1L,
-                                     "Harrison", "https://docs.google.com/spreadsheets/d/1ABk5HffGGRw33B769cRTU4IJE58W3RiHQtV0YRu4xUg/edit?usp=sharing",            3802L,     "raters", "rating",    2020L,     1L,
-                                      "Lincoln", "https://docs.google.com/spreadsheets/d/1Rh8R5AFSutQkWr4PEHc8lBAZ2cc1Qjm_gxJK2uDCtUU/edit?usp=sharing",            5166L,     "raters", "rating",    2020L,     1L,
-                                     "McKinley", "https://docs.google.com/spreadsheets/d/1QqvW2kQ3bjhx_M5krcXCHMQfTdvUo3-4nX4OlganOj8/edit?usp=sharing",            5704L,     "raters", "rating",    2020L,     1L,
-                                   "Washington", "https://docs.google.com/spreadsheets/d/1L7HZiLlfbtorruP6S9e3_SPmhderANpQETP9kTQIRLs/edit?usp=sharing",            9248L,     "raters", "rating",    2020L,     1L
-                           ) %>% 
+
+## This is just an EXAMPLE  it is overwritten in the nex code block __________________________________
+surveylookup_wNew <- data.frame(
+     stringsAsFactors = FALSE,
+  school_fromFileName = c("CCMS", "MCKI", "CCHS"),
+                 link = c("https://docs.google.com/spreadsheets/d/1S4f00m2wXOdD5XcWBWp6ITS88F06Ahr7BcZlZfZzDeM/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1KtGSScDTeniOyx2vu8ZxQgX9niAhAB-Hx1Duig-vFbE/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1_0xJPqwSrJF087-5CgE6oTiVgNVjmmeZXeHhow1oPec/edit#gid=167419926")
+,
+      cdeSchoolNumber = c(1262L, 5704L, 1266L),
+          respondents = c("raters", "raters", "raters"),
+                 type = c("rating", "rating", "rating"),
+              endYear = c(2023L, 2023L, 2023L),
+                final = c(1L, 1L, 1L),
+              edLevel = c(NA, NA, NA),
+         surveyMonkey = c(FALSE, FALSE, FALSE)
+) %>% 
   mutate(cdeSchoolNumber = as.character(cdeSchoolNumber)) %>% 
-  left_join(schoolinfo) %>% 
-  bind_rows(surveylookup) %>% 
-  create_surveyID() ## this function add the surveyID ensures that there are no duplicate entries
+  left_join(schoolinfo, by = "cdeSchoolNumber") %>% ## add in school information
+  mutate(edLevel = case_when(
+    is.na(edLevel.x) ~ edLevel.y,
+    TRUE ~ edLevel.x
+  )) %>% ## fill in edLevel values from schoolinfo for school-specific data
+  select(-edLevel.x, -edLevel.y) %>% ## drop join-created columns
+  
+  create_surveyID() ## this will remove duplicate surveys
 
 ### Code to paste datapasta-ed table into. It's same as code above...
 ### 1. highlight/delete **PASTE_DATAPASTA_HERE** 
 ### 2. replace with the code that datapasta generates.-- 
 ###    a. you do this by clicking "Addins" > "Paste as dataframe "  (works better than `paste as tribble` because it's easier to add values to the `link` column afterward (see a1. below)     
-            ### a1. Some links won't paste as tribble or DF -- Use `paste as DF` without them and then copy them (from a column in your googlesheet) and then use "paste as vector" to replace the NAs in the df you've created
+            ### a1. Some links won't paste as tribble or DF -- 1) cut the links from the table created above (leave the column header) and paste below the table you created. 2) Copy the main table. 3) Use `paste as DF` to paste the table code below...this will leave NAs where the links should be. 4)  Go back to your spread sheet, highlight and copy the links (do not include a header row), 5) Paste the links using "paste as vector" to replace the NAs in the df you've created by highlighting the c(NA....NA) of the 'link = ' vector.
 
+# select "data.frame(....)" and use Addins > "Paste as data.frame" to add your new lookup information
 surveylookup_wNew <- data.frame(
      stringsAsFactors = FALSE,
-                            school_fromFileName = c("CCMS","Harrison",NA,NA,
-                                                    NA),
-                 link = c("https://docs.google.com/spreadsheets/d/1aZftMqxQLyLdmF9r4cIwppJbwkkYeoJsYUeoIcMKGy8/edit?usp=drive_web", "https://docs.google.com/spreadsheets/d/1UXfsN_n7QO8z0vhiYwnNrfI1_uh57aFQyMKOmd1uK8U/edit#gid=1136102995", "https://docs.google.com/spreadsheets/d/1APDvD_j24XakjT3Q5FEO83ht7I4DtHnh_G8BL6xoU2A/edit#gid=1887856803", "https://docs.google.com/spreadsheets/d/1R5UdBjgqLQXseNMDL2gMPqkMwtcnUJGvB_sXyRMtQZ8/edit#gid=1058061178", "https://docs.google.com/spreadsheets/d/1MXY-eXKkG-Nvfeb3FdvPn-j6jtQ0ncgL6xR4cGAm3YE/edit#gid=1118038864")
+  school_fromFileName = c("CCMS","MCKI","CCHS",
+                          "LINC","HARR","CES","WASH",NA,NA,NA,NA,"CCHS",
+                          "CCMS","CES","HARR","LINC","MCKI","MVCK","WASH",
+                          NA,NA,NA,NA),
+                 link = c("https://docs.google.com/spreadsheets/d/1S4f00m2wXOdD5XcWBWp6ITS88F06Ahr7BcZlZfZzDeM/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1KtGSScDTeniOyx2vu8ZxQgX9niAhAB-Hx1Duig-vFbE/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1_0xJPqwSrJF087-5CgE6oTiVgNVjmmeZXeHhow1oPec/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1uvLHTrR2TmUjjvTMC0_5kBP4zTkf7TJHxw-ien1hWGQ/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1UXfsN_n7QO8z0vhiYwnNrfI1_uh57aFQyMKOmd1uK8U/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1s-zb_3u3q6UScv__M8UVB2RaNjcD5wypKSscmGZO5w8/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1yR8VnwdGF-pBFlT6zxJwbhpXl116RaYC5eIhLQ11cQY/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1MXY-eXKkG-Nvfeb3FdvPn-j6jtQ0ncgL6xR4cGAm3YE/edit#gid=1118038864", "https://docs.google.com/spreadsheets/d/1R5UdBjgqLQXseNMDL2gMPqkMwtcnUJGvB_sXyRMtQZ8/edit#gid=1058061178", "https://docs.google.com/spreadsheets/d/1APDvD_j24XakjT3Q5FEO83ht7I4DtHnh_G8BL6xoU2A/edit#gid=1887856803", "https://docs.google.com/spreadsheets/d/1FlXC9iqRjZPz2hRPwZCj6FqDGdGr6R4Boa4zy6tGjt0/edit#gid=967405629", "https://docs.google.com/spreadsheets/d/1CbSSTXS87MDuQpk3v4vsZTet1WfLFx42Ef5L0gaUyfk/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1FISa0JHDbqClQE_DhgfaRst3V4SQJmSaoM9l9mQA73w/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/17P8NVKLl57LLFjwxQ1LRIyQGcDUWOvPIvJv1D5uJrVI/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1KP1N-J1EBhPlmvnwRbzuEW-OR0gGbF9q7kblRyFg-LQ/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1TqffYRjETqgJ1iP2d3wmTX6YAqD2Ur_dsq1DqZvbc-c/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/14ckwBve1JrwUPEb1iT_7PTA8teyFQhq2Zom1RNIu-10/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1LR1-GRgKB9ojt9M_p9te5WuPPQ_qmb_CdYTbbaAVlyg/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1wOFs9zljosgGp6DFZrqNW4gwhSpDTudLdKMxYIkBHFA/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1vmJP_H4TjczONf-PKsti2rlV2vpPhiFrsFq4WtPoaw0/edit#gid=72888980", "https://docs.google.com/spreadsheets/d/1XDtbsQLQ3cF_prt9vsF8MF8evLYnVXSwFoExUZ3d658/edit#gid=1533868882", "https://docs.google.com/spreadsheets/d/1C0Y5NmBl8mTQ35D4Qab-J1kNjkWUIurrtEKIykJKd2I/edit#gid=1889648776", "https://docs.google.com/spreadsheets/d/1ObKMwtjFfXq6Isl1zsHSs4HEgfA9DmfsgnewucDbnQQ/edit#gid=628143413")
 ,
-      cdeSchoolNumber = c(1262L, 3802L, NA, NA, NA),
-                                    respondents = c("raters","raters","student",
-                                                    "parent","student"),
-                                           type = c("rating","rating","survey",
-                                                    "survey","survey"),
-                                        edLevel = c("middle","K-8","middle",NA,
-                                                    "elementary"),
-                                     schoolName = c("Canon City Middle School",
-                                                    "Harrison School",NA,NA,NA),
-                                schoolNameShort = c("CCMS","Harrison",NA,NA,
-                                                    NA),
-                                        endYear = c(2023L,2023L,2023L,2023L,
-                                                    2023L),
-                final = c(1L, 1L, 1L, 1L, 1L)
-                          ) %>% 
+      cdeSchoolNumber = c(1262L,5704L,1266L,
+                          5166L,3802L,7950L,9248L,NA,NA,NA,NA,1266L,1262L,
+                          7950L,3802L,5166L,5704L,6752L,9248L,NA,NA,NA,
+                          NA),
+          respondents = c("raters","raters",
+                          "raters","raters","raters","raters","raters","student",
+                          "parent","student","student","raters","raters",
+                          "raters","raters","raters","raters","raters",
+                          "raters","parent","student","student","student"),
+                 type = c("rating","rating",
+                          "rating","rating","rating","rating","rating","survey",
+                          "survey","survey","survey","rating","rating",
+                          "rating","rating","rating","rating","rating",
+                          "rating","survey","survey","survey","survey"),
+              endYear = c(2023L,2023L,2023L,
+                          2023L,2023L,2023L,2023L,2023L,2023L,2023L,2023L,
+                          2024L,2024L,2024L,2024L,2024L,2024L,2024L,2024L,
+                          2024L,2024L,2024L,2024L),
+                final = c(1L,1L,1L,1L,1L,1L,
+                          1L,1L,1L,1L,1L,1L,1L,1L,1L,1L,1L,1L,1L,1L,
+                          1L,1L,1L),
+              edLevel = c(NA,NA,NA,NA,NA,NA,
+                          NA,"elementary",NA,"middle","high",NA,NA,NA,NA,
+                          NA,NA,NA,NA,NA,"elementary","middle","high"),
+         surveyMonkey = c(FALSE,FALSE,FALSE,
+                          FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,
+                          FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,FALSE,
+                          TRUE,TRUE,TRUE,TRUE)
+) %>% 
   mutate(cdeSchoolNumber = as.character(cdeSchoolNumber)) %>% 
-  left_join(schoolinfo) %>% 
-  bind_rows(surveylookup) %>% 
-  create_surveyID()
+  left_join(schoolinfo, by = "cdeSchoolNumber") %>% ## add in school information
+  mutate(edLevel = case_when(
+    is.na(edLevel.x) ~ edLevel.y,
+    TRUE ~ edLevel.x
+  )) %>% ## fill in edLevel values from schoolinfo for school-specific data
+  select(-edLevel.x, -edLevel.y) %>% ## drop join-created columns
+
+  create_surveyID() ## this will remove duplicate surveys
 
 
 
-warning("Make sure you use create_surveyID() before saving...") ## this was the last line in the code above
-
+warning("Make sure you check surveylookup_wNew before saving...") 
+View(surveylookup_wNew) ## you should see the surveys you added with ID numbers
 
 saveRDS(surveylookup_wNew, "data/surveylookup.rds")
 
@@ -217,8 +271,52 @@ surveylookup <- readRDS("data/surveylookup.rds")
 warning("review new questions to ensure that the regex below will catch the school Q's and the demo Q's")  ## You'll need to know a little about regular expressions (regex)  - https://www.regular-expressions.info/tutorial.html
 
 ### Regex to recognize demographic and school questions. This is used in the readSurveyData function
-demoQ_text <- tolower(c("What grade|Which Pathway|I am"))
-schoolQ_text <-  "what is your school.*|please select your school.*|what school does your child attend.*|please select your school.*"
+demoQ_text <- tolower(c("What grade|Which Pathway|I am.*"))
+schoolQ_text <-  "i go to school at.*|i attend.*|what is your school.*|please select your school.*|what school does your child attend.*|please select your school.*"
+
+
+### load functions
+
+## function to strip out surveyMonkey junk columns and rows
+#' Title
+#'
+#' @param rawData -- raw data from surveyMonkey
+#'
+#' @return
+#' @export
+#'
+#' @examples
+preProcessSurveyMonkey <- function(rawData) {
+  ##specify column names that are unnecessary (surveymonkey cols)
+  dropCols <- c("Collector ID"
+                #,"Start Date"
+                ,"End Date"
+                ,"IP Address"
+                ,"Email Address"                                                                                                                                 
+                ,"First Name"                                                                                                                                         
+                ,"Last Name"
+                ,"Custom Data 1"  
+  )
+  
+  
+  surveyMonkeyID <- rawData[[2, "Collector ID"]]
+  
+  ## stamdardize surveymonkey format
+  surveyDataRaw <- rawData %>% 
+    rename(respondentID = `Respondent ID`) %>% 
+    select(-all_of(dropCols)) 
+  
+  # extract response type var that is nest in surveymonkey table -- this assumes that the survey data
+  #start in column 10
+  openQs <- rawData[1,10:length(names(rawData))] %>% 
+    pivot_longer(cols = names(rawData)[10:length(names(rawData))], names_to = "qText", values_to = "responseType") %>% 
+    mutate(responseType = str_extract(tolower(responseType), "open")) %>% 
+    filter(!is.na(responseType))
+  
+  surveyDataRaw <- surveyDataRaw[-1,] ## dropping the responseType row.
+  
+  return(list("openQs"=openQs, "surveyDataRaw"=surveyDataRaw))
+}
 #' Title readSurveyData
 #'
 #'NOTES: Open-ended question are identified by having more than 15 different responses (Kind of a weak criteria, but it's a starting point)
@@ -229,171 +327,208 @@ schoolQ_text <-  "what is your school.*|please select your school.*|what school 
 #' @param schoolNumber - character -- cde school number
 #' @param .demoQ_text - string with regex of to match lowercase demo questions. e.g. tolower(c("What grade|Which Pathway|I am"))
 #' @param .schoolQ_text - string with regex for matching the school qs of all surveys
+#' @param surveyMonkey - boolean that specifies whether the file is an excel file that came from survey monkey
 #'
 #' @return List with a standardized data table 'surveyResponses' and a question lookup 'sureveyQlookup'
 #' @export
 #'
 #' @examples test <- readSurveyData()
-readSurveyData <- function(fileID, schoolNumber=NA, .demoQ_text = demoQ_text, .schoolQ_text = schoolQ_text) {
+readSurveyData <- function(fileID,
+                           schoolNumber = NA,
+                           surveyMonkey,
+                           .demoQ_text = demoQ_text,
+                           .schoolQ_text = schoolQ_text) {
+  # fileID= surveyProcessInfo$fileID[1]
+  # schoolNumber=surveyProcessInfo$schoolNumber[1]
+  # surveyMonkey=surveyProcessInfo$surveyMonkey[1]
+  # .demoQ_text = demoQ_text
+  # .schoolQ_text = schoolQ_text
+  #
   
-  ##clean up extra characters
+  ##clean up extra characters that may have been generated by encoding the file name string
   fileID <- iconv(fileID, "", "ASCII", sub = " ")
+  
+  
+  ## ensure the school number doesn't have spaces
   schoolNumber <- str_trim(schoolNumber, side = "both")
   
   surveylookup_filtered <- surveylookup %>% filter(link == fileID)
   surveyid <- surveylookup_filtered$surveyID[1]
   # Conditional to read xlsx and google differently -------------------------
-  
-  if(str_detect(fileID, ".xlsx$")){  #### READ EXCEL SHEET ###########
+  if (str_detect(fileID, ".xlsx$")) {
+    #### READ EXCEL SHEET ###########
     dataFolder <- "data_raw/canonCity/surveyData/surveymonkey/"
-    datapath <- paste0(dataFolder,fileID)
+    datapath <- paste0(dataFolder, fileID)
     fileName <- fileID
     #read data
-    surveyDataRaw1 <- readxl::read_excel(datapath)%>% 
+    surveyDataRaw1 <- readxl::read_excel(datapath) %>%
       rename(timestamp = `Start Date`) #change name of timestamp col
     
-    ##specify column names that are unnecessary (surveymonkey cols)
-    dropCols <- c("Collector ID"
-                  #,"Start Date"
-                  ,"End Date"
-                  ,"IP Address"
-                  ,"Email Address"                                                                                                                                 
-                  ,"First Name"                                                                                                                                         
-                  ,"Last Name"
-                  ,"Custom Data 1"  
-    )
+    rawDataPre <- preProcessSurveyMonkey(surveyDataRaw1)
+    openQs <- rawDataPre$openQs
+    surveyDataRaw <- rawDataPre$surveyDataRaw
     
     
-    surveyMonkeyID <- surveyDataRaw1[[2, "Collector ID"]]
-    
-    ## stamdardize surveymonkey format
-    surveyDataRaw <- surveyDataRaw1 %>% 
-      rename(respondentID = `Respondent ID`) %>% 
-      select(-all_of(dropCols)) 
-    
-    # extract response type var that is nest in surveymonkey table -- this assumes that the survey data
-    #start in column 10
-    openQs <- surveyDataRaw1[1,10:length(names(surveyDataRaw1))] %>% 
-      pivot_longer(cols = names(surveyDataRaw1)[10:length(names(surveyDataRaw1))], names_to = "qText", values_to = "responseType") %>% 
-      mutate(responseType = str_extract(tolower(responseType), "open")) %>% 
-      filter(!is.na(responseType))
-    
-    surveyDataRaw <- surveyDataRaw[-1,] ## dropping the responseType row.
-    
-  } else {  #### READ GOOGLE SHEET ###########
+  } else {
+    #### READ GOOGLE SHEET ###########
     ## read in google sheets
     ## get info about sheet
     sheetInfo <- drive_get(fileID)
-    datapath <- fileID #setting so that this can be used 
+    datapath <- fileID #setting so that this can be used
     fileName <- sheetInfo$name
+    
+    seconds <- sample(x = 2:15, size = 1, replace=TRUE) ## set a 60-100 second time out to trick google into 
+    # not shutting down our access.
+    print(glue("First sleep: Sleeping {seconds} seconds to make it difficult for Google to determine we are using a machine."))
+    Sys.sleep(seconds)
     
     ## check how many sheets are in the file
     sheetNames <- sheet_names(sheetInfo)
-    if(length(sheetNames)>1){
-      warning("Your survey data sheet has multiple sheets. These are the names of the sheets:\n", paste(sheetNames, collapse = " | "))
+    if (length(sheetNames) > 1) {
+      warning(
+        "Your survey data sheet has multiple sheets. These are the names of the sheets:\n",
+        paste(sheetNames, collapse = " | ")
+      )
     }
+    seconds <- sample(x = 2:15, size = 1, replace=TRUE) ## set a 60-100 second time out to trick google into 
+    # not shutting down our access.
+    print(glue("Second sleep: Sleeping {seconds} seconds to make it difficult for Google to determine we are using a machine."))
+    Sys.sleep(seconds)
     
-    #read survey data
-    surveyDataRaw <- read_sheet(sheetInfo) %>% 
-      rename(timestamp = Timestamp)   #change name of timestamp col
-    
-    
-    openQs <- data.frame(matrix(ncol = 2, nrow = 0)) %>% 
-      setNames(c("qText", "responseType")) %>% 
-      mutate(qText = as.character(qText),
-             responseType = as.character(responseType))
+    if (surveyMonkey == T) {
+      surveyDataRaw1 <- read_sheet(sheetInfo) %>%
+        rename(timestamp = `Start Date`)
+      
+      rawDataPre <- preProcessSurveyMonkey(surveyDataRaw1)
+      openQs <- rawDataPre$openQs
+      surveyDataRaw <- rawDataPre$surveyDataRaw
+      
+      
+    } else {
+      #read survey data from google sheet not using surveyMonkey
+      surveyDataRaw <- read_sheet(sheetInfo) %>%
+        rename(timestamp = Timestamp)   #change name of timestamp col
+      
+      
+      openQs <- data.frame(matrix(ncol = 2, nrow = 0)) %>%
+        setNames(c("qText", "responseType")) %>%
+        mutate(qText = as.character(qText),
+               responseType = as.character(responseType))
+    }
   }
-  
-  # End of excel / google conditional ---------------------------------------
+  # End of excel / google conditional
   
   # #read survey data
-  # surveyDataRaw <- read_sheet(sheetInfo) 
+  # surveyDataRaw <- read_sheet(sheetInfo)
   #find date survey administered
-  surveyDate <- surveyDataRaw[[1,'timestamp']] %>% 
+  surveyDate <- surveyDataRaw[[1, 'timestamp']] %>%
     as.Date.POSIXct()
   ## determine current endyear
-  if(lubridate::week(surveyDate)<33){ ##week 33 is mid-August
+  if (lubridate::week(surveyDate) < 33) {
+    ##week 33 is mid-August
     surveyendyear <- lubridate::year(surveyDate)
-  } else {surveyendyear <- lubridate::year(surveyDate+1)}
+  } else {
+    surveyendyear <- lubridate::year(surveyDate + 1)
+  }
   
   
   
-  # 1. create a surveyQlookup table  
+  # 1. create a surveyQlookup table
   qText <- names(surveyDataRaw)
   #add info for joining
-  surveyQlookup <- data.frame("qText"=qText) %>% 
-    rowid_to_column("qNum") %>% 
-    mutate(qName = paste0("q", qNum),
-           surveyID = surveyid,
-           fileAddress = datapath,
-           fileName = fileName,
-           endYear = surveyendyear) %>% 
+  surveyQlookup <- data.frame("qText" = qText) %>%
+    rowid_to_column("qNum") %>%
+    mutate(
+      qName = paste0("q", qNum),
+      surveyID = surveyid,
+      fileAddress = datapath,
+      fileName = fileName,
+      endYear = surveyendyear
+    ) %>%
     left_join(openQs, by = "qText") # adding in questionType for those that have that information
   #need to add surveyID, demo, scale
   
   ## 2. create long data set
-  surveyDataLong <- surveyDataRaw %>% 
+  surveyDataLong <- surveyDataRaw %>%
     mutate(across(everything(), .fns = as.character)) %>% #convert all data to character so that they can be stored in one column
-    {if(!"respondentID" %in% names(surveyDataRaw)) rowid_to_column(., "respondentID") else .} %>% #if respondentID hasn't been set, use the row number.Otherwise pass the dataset unchanged
-    pivot_longer(cols = all_of(qText[qText != "respondentID"]), names_to = "qText", values_to = "response") %>%  ## note that we are dropping "respondentID" from qText because it is included when pulling from surveymonkey
-    mutate(respondentID = as.numeric(respondentID)) %>% 
-    mutate(fileName = fileName, 
-           fileAddress = datapath,
-           endYear = surveyendyear,
-           surveyID =surveyid) 
+    {
+      if (!"respondentID" %in% names(surveyDataRaw))
+        rowid_to_column(., "respondentID")
+      else
+        .
+    } %>% #if respondentID hasn't been set, use the row number.Otherwise pass the dataset unchanged
+    pivot_longer(cols = all_of(qText[qText != "respondentID"]),
+                 names_to = "qText",
+                 values_to = "response") %>%  ## note that we are dropping "respondentID" from qText because it is included when pulling from surveymonkey
+    mutate(respondentID = as.numeric(respondentID)) %>%
+    mutate(
+      fileName = fileName,
+      fileAddress = datapath,
+      endYear = surveyendyear,
+      surveyID = surveyid
+    )
   
   #3a. Set item type by checking for open-responses
   ## find distinct responses ...but drop timestamp
-  if(nrow(openQs)==0 & n_distinct(surveyDataLong$respondentID) < 16){  #check to see if you have enough survey respondents
-    warning("Not enough respondents to determine if question is open-ended.  You need to manually check ", datapath, "for open-ended questions and adjust surveyQlookup.")
-    openResponse <- "No open ended questions" ## this would have to match an open ended question text to be counted.
+  if (nrow(openQs) == 0 &
+      n_distinct(surveyDataLong$respondentID) < 16) {
+    #check to see if you have enough survey respondents
+    warning(
+      "Not enough respondents to determine if question is open-ended.  You need to manually check ",
+      datapath,
+      "for open-ended questions and adjust surveyQlookup."
+    )
+    openResponse <-
+      "No open ended questions" ## this would have to match an open ended question text to be counted.
   } else {
-    responses <- surveyDataLong %>% 
-      distinct(response, .keep_all = TRUE) %>% 
+    responses <- surveyDataLong %>%
+      distinct(response, .keep_all = TRUE) %>%
       filter(!qText %in% c("timestamp"))
     #find out which questions have a lot of different responses...these are almost certainly open ended
-    openResponse <- count(responses, qText) %>% 
-      arrange(n) %>% 
-      filter(n>15) %>% ### assumes that selected response items will have fewer than 15 entries
-      pull(qText) 
+    openResponse <- count(responses, qText) %>%
+      arrange(n) %>%
+      filter(n > 15) %>% ### assumes that selected response items will have fewer than 15 entries
+      pull(qText)
   }
   
   #3b. Finalize surveyQlookup: set open-ended response flag in surveyQlookup
   
-  surveyQlookup <- surveyQlookup %>% 
-    mutate(responseType = case_when(
-      is.na(responseType) & qText %in% openResponse ~ "open",
-      is.na(responseType) & qText == "timestamp" ~ "auto",
-      is.na(responseType) ~ "selected",
-      TRUE ~ responseType
-    ),
-    demoQ = case_when(
-      str_detect(tolower(qText), pattern = demoQ_text) ~ 1
-    ))
+  surveyQlookup <- surveyQlookup %>%
+    mutate(
+      responseType = case_when(
+        is.na(responseType) & qText %in% openResponse ~ "open",
+        is.na(responseType) & qText == "timestamp" ~ "auto",
+        is.na(responseType) ~ "selected",
+        TRUE ~ responseType
+      ),
+      demoQ = case_when(str_detect(tolower(qText), pattern = demoQ_text) ~ 1)
+    )
   
   ##4. Finalize long data  ### add school number to long format
-
+  
   
   ### add school to responses
   ## find non-school specific surveys
-  if(is.na(schoolNumber)){
-    #find the question asking about school attend 
-    schoolQ <- surveyDataLong %>%  
-      left_join(select(surveyQlookup, -fileName, - endYear), by = c("fileAddress", "qText")) %>% ## add in responseType for each response 
-      filter(responseType == "selected", 
-             str_detect(tolower(qText), .schoolQ_text)) %>% 
-             # str_detect(tolower(response), "canon city e.*|.*exploratory.*|ces|canon city m.*|canon city h.*|harrison|mckinley|lincoln|washington")) %>% 
-      # distinct(response, qText, .keep_all = TRUE) %>% 
-      distinct(qText) %>% 
+  if (is.na(schoolNumber)) {
+    #find the question asking about school attend
+    schoolQ <- surveyDataLong %>%
+      left_join(select(surveyQlookup,-fileName,-endYear),
+                by = c("fileAddress", "qText")) %>% ## add in responseType for each response
+      filter(responseType == "selected",
+             str_detect(tolower(qText), .schoolQ_text)) %>%
+      # str_detect(tolower(response), "canon city e.*|.*exploratory.*|ces|canon city m.*|canon city h.*|harrison|mckinley|lincoln|washington")) %>%
+      # distinct(response, qText, .keep_all = TRUE) %>%
+      distinct(qText) %>%
       pull(qText)
     #set school for each respondent
-      if(length(schoolQ)==1){ #if there is a school question...
-        #create a joining table with schoolnumber and respondentID
-        joinSchools <- surveyDataLong %>% 
-          filter(qText == schoolQ,
-                 !is.na(response)) %>% #just get the response to the school Q
+    if (length(schoolQ) == 1) {
+      #if there is a school question...
+      #create a joining table with schoolnumber and respondentID
+      joinSchools <- surveyDataLong %>%
+        filter(qText == schoolQ,!is.na(response)) %>% #just get the response to the school Q
         distinct(respondentID, response) %>% ## get table with respondentID and selected school
-          mutate(cdeSchoolNumber = case_when(
+        mutate(
+          cdeSchoolNumber = case_when(
             str_detect(tolower(response), "canon city e.*|.*exploratory.*|ces") ~ "7950",
             str_detect(tolower(response), "canon city m.*|.*ccms.*") ~ "1262",
             str_detect(tolower(response), "canon city h.*|.*cchs.*") ~ "1266",
@@ -401,54 +536,69 @@ readSurveyData <- function(fileID, schoolNumber=NA, .demoQ_text = demoQ_text, .s
             str_detect(tolower(response), ",*mckinley.*") ~ "5704",
             str_detect(tolower(response), ".*lincoln.*") ~ "5166",
             str_detect(tolower(response), ".*washington.*") ~ "9248"
-          )) %>%  # create cdeSchoolNumber from responses
-       select(-response)
-        ## add school by joining on respondentID
-        surveyData <- surveyDataLong %>% 
-          left_join(joinSchools, by = "respondentID")
-        
-      } else  if (length(schoolQ)==0){ # no school question identified
-        #check to see if this is the highschool survey (one school)
-        currSurvey <- filter(surveylookup, link == fileID)
-        if(currSurvey$respondents == "student" & currSurvey$edLevel == "high"){
-          surveyData <- surveyDataLong %>% 
-            mutate(cdeSchoolNumber = "1266")
-          warning("No 'choose your school' questions identified. I think it's a high school survey. CDE school number 1266 (Canon City HS) was added for ", datapath, ". Double check this data to make sure this is correct.")  
-        } else {
-          surveyData <- surveyDataLong %>% 
-            mutate(cdeSchoolNumber = NA)
-          warning("No 'choose your school' questions identified.  CDE school number not added for ", datapath, ". You'll need to add school number to these data.")  
-        }
-        
-      } else  if (length(schoolQ)>1){
-        surveyData <- surveyDataLong %>% 
+          )
+        ) %>%  # create cdeSchoolNumber from responses
+        select(-response)
+      ## add school by joining on respondentID
+      surveyData <- surveyDataLong %>%
+        left_join(joinSchools, by = "respondentID")
+      
+    } else  if (length(schoolQ) == 0) {
+      # no school question identified
+      #check to see if this is the highschool survey (one school)
+      currSurvey <- filter(surveylookup, link == fileID)
+      if (currSurvey$respondents == "student" &
+          currSurvey$edLevel == "high") {
+        surveyData <- surveyDataLong %>%
+          mutate(cdeSchoolNumber = "1266")
+        warning(
+          "No 'choose your school' questions identified. I think it's a high school survey. CDE school number 1266 (Canon City HS) was added for ",
+          datapath,
+          ". Double check this data to make sure this is correct."
+        )
+      } else {
+        surveyData <- surveyDataLong %>%
           mutate(cdeSchoolNumber = NA)
-        warning("Multiple 'choose your school' questions identified.  CDE school number not added for ", datapath, ". You may need to modify this function to better determine 'choose your school' questions.")
+        warning(
+          "No 'choose your school' questions identified.  CDE school number not added for ",
+          datapath,
+          ". You'll need to add school number to these data."
+        )
       }
+      
+    } else  if (length(schoolQ) > 1) {
+      surveyData <- surveyDataLong %>%
+        mutate(cdeSchoolNumber = NA)
+      warning(
+        "Multiple 'choose your school' questions identified.  CDE school number not added for ",
+        datapath,
+        ". You may need to modify this function to better determine 'choose your school' questions."
+      )
+    }
     
   } else {
-    surveyData <- surveyDataLong %>% 
+    surveyData <- surveyDataLong %>%
       mutate(cdeSchoolNumber = schoolNumber)
   }
-  return(list("surveyData"= surveyData, "surveyQlookup" = surveyQlookup))
   
-}
+  return(list("surveyData" = surveyData, "surveyQlookup" = surveyQlookup))
+  
+} 
 #test <- readSurveyData(fileID,schoolNum)
 
-
+ #end expression loading functions
 ############# LOOP SURVEY read function ###########################
 #### 1A -- FOR DATA SAVED TO GOOGLE SHEETS USE THIS .......................
 
 ## Set year to extract
-endYear_vec <-  2023 # specify if you want to load only one year
+endYear_vec <-  2024 # specify if you want to load only one year
 ### or ##
-endYear_vec <-  NA  # specify NA if you want to load all
-
+endYear_vec <-  NULL  # specify NA if you want to load all
 
 surveyProcessInfo <- readRDS("data/surveylookup.rds") %>% 
   filter(type == "survey") %>% 
-  {if(!is.na(endYear_vec)) filter(.,endYear  %in% endYear_vec) else . } %>% ## get a specific year if thats what we want
-  select(fileID = link, schoolNumber = cdeSchoolNumber) 
+  {if(length(endYear_vec)>0) filter(.,endYear  %in% endYear_vec) else . } %>% ## get a specific year if thats what we want
+  select(fileID = link, schoolNumber = cdeSchoolNumber, surveyMonkey) 
  
 
 
@@ -532,6 +682,10 @@ write.csv(optionsOldwithNew, "data/optionsQlookup.csv", row.names = F)
 #### manually set optionOrder of options in spreadsheet if they are new
 #### Opening up the "data/optionsQlookup.csv" sheet in google or excel is probably the easiest.
 
+## Open the data you just saved to review any options that may have been added. 
+## You will need to manually set optionOrder (see Notes in csv) and scale (see notes in CSV) for each new item.
+utils::browseURL("data/optionsQlookup.csv")
+
 ## This table assumes that scale items 1 & 2 (e.g. Strongly Disagree, Disagree) 
 ## have a negative valance., 3 (undecided or don't know) has a neutral valance
 ## and 4 & 5 (agree, strongly agree) have a positive valance. This will be used to 
@@ -552,9 +706,20 @@ optionsQlookup <- read.csv("data/optionsQlookup.csv") %>%
   right_join(questionOptions, by = "response") %>% 
   select(-n)
 
-wait... # don't run this unless you've checked that every thing is correct.
-if(checked == TRUE){saveRDS(optionsQlookup, "data/optionsQlookup.rds")} else stop("optionsQlook.rds not saved!!!  Confirm that you've checked it (next line of code) and re-run this line")
-checked <- TRUE
+View(optionsQlookup)
+
+wait... # don't run this unless you've checked that every thing is correct. THis line will throw an error
+
+
+checked <- menu(c("I haven't checked","I have checked"),  title = "Have you checked the optionsQlookup file?")
+
+if(checked == 2){
+  saveRDS(optionsQlookup, "data/optionsQlookup.rds")
+  print("optionsQlookup.rds has been saved")
+  } else stop("optionsQlook.rds not saved!!!  You need to select `I have checked` to save the file")
+
+
+
 
 #### set up Demos for joining - start here #############
 ## this is from the app...all of the survey responses
@@ -634,7 +799,7 @@ demosTable <- readRDS("data/demosTable.rds")
 ### Rating form data handling
 ## get list of surveys and rating forms NOTE:  New rating sheets will need to be 
 ## added in the same way they were for the surveys (see above)
-surveylookup <- readRDS("data/surveylookup.rds")
+surveylookup <- readRDS("data/surveylookup.rds") ## we filter this for ratings below
 
 
 #read rating template data ##########
@@ -657,6 +822,7 @@ surveylookup <- readRDS("data/surveylookup.rds")
 #'
 #' @param datapath - string of googlesheet ID or url (could easily make this the excel spreadsheet file path to be loaded). 
 #' @param sheet_selected - string. the excel worksheet to load
+#' @param SchoolNumberFromLookup -- string -- the school number specified in surveylookup table
 #'
 #' @return - a table of the ratings on a worksheet in long format
 #' @export
@@ -665,12 +831,13 @@ surveylookup <- readRDS("data/surveylookup.rds")
 #' 
 #' datapath <- "https://docs.google.com/spreadsheets/d/1UXfsN_n7QO8z0vhiYwnNrfI1_uh57aFQyMKOmd1uK8U/edit#gid=1136102995"
 #' sheet_selected <- "Improvement of Instruction"
-extractRatingSheet <- function(datapath, sheet_selected= sheetsList[[1]]) {
+extractRatingSheet <- function(datapath, sheet_selected= sheetsList[[1]], schoolNumberFromLookup = schoolNumber) {
 
   ratingData <- range_read(datapath, skip = 2, sheet = sheet_selected)
   
-  seconds <- 60
-  print(glue("Sleeping {seconds} seconds so Google doesn't kick us out."))
+  seconds <- sample(x = 40:80, size = 1, replace=TRUE) ## set a 40-80 second time out to trick google into 
+  # not shutting down our access.
+  print(glue("Sleeping {seconds} seconds to make it difficult for Google to determine we are using a machine and to avoid overrunning quotas."))
   Sys.sleep(seconds)
   print("Done with sleeping.")
   ## create named vector of columns -- names contain the actual question text
@@ -696,8 +863,8 @@ extractRatingSheet <- function(datapath, sheet_selected= sheetsList[[1]]) {
     na.omit() %>% 
     mutate(School = str_trim(School)) %>% 
     pull(School)
-  print("School Name: ")
-  print(schoolName)
+  print(glue::glue("School Name from sheet: {schoolName}"))
+
   ## check to see if the school name is unique
   if(length(schoolName) !=1) {
     schoolName <- schoolName[1] #if there's more than one, take the first one and send a warning message
@@ -720,7 +887,8 @@ extractRatingSheet <- function(datapath, sheet_selected= sheetsList[[1]]) {
   longCols <- colNames[!colNames %in% c(idCols, "construct")]
   ratingDataLong <- ratingData2 %>% 
     mutate(across(all_of(longCols), .fns = as.integer)) %>% 
-    pivot_longer(cols = all_of(longCols), names_to = "ratingTopic", values_to = "rating")
+    pivot_longer(cols = all_of(longCols), names_to = "ratingTopic", values_to = "rating") %>% 
+    mutate(cdeSchoolNumber = schoolNumberFromLookup)
   
   
 }
@@ -744,57 +912,68 @@ extractRatingSheet <- function(datapath, sheet_selected= sheetsList[[1]]) {
 #' @export
 #'
 #' @examples getDataFromAllSheets(dataPath = "data/canonCity/ratingData/", dataFile = "2022_Harrison_ratings.xlsx", endyear = 2022)
-getDataFromAllSheets <- function(dataPath = surveylookup$link[1], 
-                                 endyear = surveylookup$endYear[1], 
-                                 dimensions = ratingDimensions, 
-                                 final = surveylookup$final[1], 
-                                 schoolNumber = surveylookup$cdeSchoolNumber[1], 
-                                 surveyID = surveylookup$surveyID[1]) {
+getDataFromAllSheets <-
+  function(dataPath = ratingLoopTable$dataPath[1],
+           endyear = ratingLoopTable$endyear[1],
+           dimensions = ratingDimensions,
+           final = ratingLoopTable$final[1],
+           schoolNumber = ratingLoopTable$schoolNumber[1],
+           surveyID = ratingLoopTable$surveyID[1]) {
+    dataPath = ratingLoopTable$dataPath[1]
+    endyear = ratingLoopTable$endyear[1]
+    dimensions = ratingDimensions
+    final = ratingLoopTable$final[1]
+    schoolNumber = ratingLoopTable$schoolNumber[1]
+    surveyID = ratingLoopTable$surveyID[1]
+    
+    # dataPath = "https://docs.google.com/spreadsheets/d/1UXfsN_n7QO8z0vhiYwnNrfI1_uh57aFQyMKOmd1uK8U/edit#gid=1136102995"
+    # endyear = 2023
+    # dimensions = ratingDimensions
+    # final = 1
+    # schoolNumber = "3802"
+    # surveyID = 125
+    
+    ## id the sheet names in the spreadsheet/workbook
+    #read sheet names
+    sheetInfo <- drive_get(dataPath)
+    sheetName <- sheetInfo$name[1]
+    sheetsList_all <- sheet_names(sheetInfo)
+    ## drop summary and appendix sheets
+    sheetsList <-
+      sheetsList_all[tolower(sheetsList_all) %in% tolower(dimensions)]
+    print(paste("Processing sheet name : ", sheetName))
+    
+    ## clean up sheet names and catch odd occurrences
+    if (length(sheetsList) == length(dimensions)) {
+      print("Rating dimensions match expected dimensions")
+    } else {
+      warning(
+        paste(
+          "Expected number of rating sheets not found.\nRating sheets expected: \n",
+          paste(dimensions, collapse = " | "),
+          "\nRating sheets found: \n",
+          paste(sheetsList, collapse = " | "),
+          "\nDropped sheets: ",
+          paste(sheetsList_all[!tolower(sheetsList_all) %in% tolower(dimensions)], collapse = " | ")
+        )
+      )
+    }
+    
+    
+    ## extract each sheet of the file and combine into a long table using extractRatingSheet()
+    map(sheetsList, extractRatingSheet, datapath = sheetInfo) %>%
+      bind_rows() %>%
+      mutate(
+        endYear = endyear,
+        finalizedRating = final,
+        cdeSchoolNumber = schoolNumber,
+        surveyID = surveyID
+      )
+    
+  }
 
-  
-  # dataPath = "https://docs.google.com/spreadsheets/d/1UXfsN_n7QO8z0vhiYwnNrfI1_uh57aFQyMKOmd1uK8U/edit#gid=1136102995" 
-  # endyear = 2023 
-  # dimensions = ratingDimensions
-  # final = 1
-  # schoolNumber = "3802" 
-  # surveyID = 125
-  
-  ## id the sheet names in the spreadsheet/workbook
-  #read sheet names
-  sheetInfo <- drive_get(dataPath)
-  sheetName <- sheetInfo$name[1]
-  sheetsList_all <- sheet_names(sheetInfo)
-  ## drop summary and appendix sheets
-  sheetsList <- sheetsList_all[tolower(sheetsList_all) %in% tolower(dimensions) ]
-  print(paste("Sheet name : ",sheetName))
-  
-  ## clean up sheet names and catch odd occurrences
- if(length(sheetsList) == length(dimensions)){
-   print("Rating dimensions match expected dimensions")
-   } else {  
-   warning(paste("Expected number of rating sheets not found.\nRating sheets expected: \n",
-                 paste(dimensions, collapse = " | "), 
-                 "\nRating sheets found: \n",  
-                 paste(sheetsList, collapse = " | "), 
-                 "\nDropped sheets: ",
-                 paste(sheetsList_all[!tolower(sheetsList_all) %in% tolower(dimensions) ], collapse = " | ")
-   )
-   )             
-}
-  
- 
-  ## extract each sheet of the file and combine into a long table using extractRatingSheet()
-  map(sheetsList, extractRatingSheet, datapath = sheetInfo) %>% 
-    bind_rows() %>% 
-    mutate(endYear = endyear,
-           finalizedRating = final,
-           cdeSchoolNumber = schoolNumber,
-           surveyID = surveyID)
-  
-}
 
-
-
+#test <- getDataFromAllSheets()
 
 ### creating vector of sheet names (rating dimensions)  to look for (an argument in the function)
 ## I've included these warnings to call attention to manual checking that should be going on 
@@ -818,7 +997,10 @@ if(lubridate::week(Sys.Date())<33){ ##week 33 is mid-August
 
 ratingendyear <- surveyendyear
 ## or -- if running a back year...specify as below
-# ratingendyear <- 2022
+# ratingendyear <- 2022:2024
+ratingendyear <- 2022
+ratingendyear <- 2023
+ratingendyear <- 2024
 
 if (reloadAllRatings == TRUE){
   ratingLoopTable <- surveylookup %>% 
@@ -829,7 +1011,7 @@ if (reloadAllRatings == TRUE){
 
   ## reset this filter if not reloading all ratings
   ratingLoopTable <- surveylookup %>% 
-      filter(type == "rating", final == 1, endYear == ratingendyear) %>%
+      filter(type == "rating", final == 1, endYear %in% ratingendyear) %>%
       select(dataPath = link, endyear = endYear, final, schoolNumber = cdeSchoolNumber, surveyID)
   View(ratingLoopTable)
   stop("You need to stop and check ratingLoopTable to make sure you are loading the correct subset of the rating forms.")
@@ -855,9 +1037,9 @@ ratingResponses_archived <- readRDS("data/ratingResponses.rds") %>%
 
 #find all rating sheets that have been previously saved that are also in the new data
 filterTable_rating <- ratingResponses_to_add %>% 
-  distinct(School, endYear, finalizedRating, surveyID)
+  distinct(cdeSchoolNumber, endYear, finalizedRating, surveyID)
 
-ratingDimensions <- c("Climate","Health","Innovative Instruction", "Equity of Opportunity","Learning Experiences","Assessment Practices", "Improvement of Instruction", "Postive Student Behavior", "Resource Acquisition" )
+# ratingDimensions <- c("Climate","Health","Innovative Instruction", "Equity of Opportunity","Learning Experiences","Assessment Practices", "Improvement of Instruction", "Postive Student Behavior", "Resource Acquisition" )
 ## get school table to replace School with the schoolNameShort field
 schoolsTableJoiner <- schoolsTable %>% 
   select(cdeSchoolNumber, schoolNameShort)
@@ -883,14 +1065,21 @@ if(reloadAllRatings == FALSE){ ## make sure you don't create duplicate ratings a
     rename(School = schoolNameShort)
 }
 
+## Take a look at the data file you created.  Check to see that year(s) you added 
+## look correct. 
+View(ratingResponses)
 
-if(TRUE){
-  stop("You are about to overwrite the ratingResponse.rds file with all new data! Run saveRDS in this conditional (below) if you're sure.")
+### save ratings
+saveRatings <- menu(choices = c("I'm ready to save!", "Don't save."), 
+                    title = "Save the updated ratingResponses file?\nYou can type `0` or ESC to exit.")
+ 
+if(saveRatings == 1){
   saveRDS(ratingResponses, "data/ratingResponses.rds")
-} 
+  print("Rating responses saved as data/ratingResponses.rds")
+} else if(saveRatings == 2) print("Updated ratingResponses NOT saved.")
 
 
-
+stop("You have completed survey and rating data processing.")
 
 
 # End Data Processing... --------------------------------------------------
