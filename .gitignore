@@ -52,7 +52,7 @@ rsconnect/
 .Rhistory
 .RData
 .Ruserdata
-data
+/data
 **/data
 **/**/data
 data_raw
