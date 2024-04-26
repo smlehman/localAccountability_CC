@@ -65,6 +65,7 @@ data_raw
 data_raw
 *.fst
 *.rds
+*.xlsx
 **/*.fst
 **/*.rds
 **/*.db
