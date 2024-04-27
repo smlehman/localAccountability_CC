@@ -26,14 +26,19 @@ library(tidyverse)
 library(fst)
 library(googlesheets4)
 library(googledrive)
-#Handy utility for pasting information into 
+library(fuzzyjoin)
+
+#### Addins that you will want
+# install.packages("editData")
+require(editData)
+require(datapasta)
+### editData instructions  https://cran.r-project.org/web/packages/editData/vignettes/editData.html
 
 ## For convenience I often create simple lookup tables in excel or googlesheets, copy them and use the datapasta addin to paste as a tribble or dataframe
-#library(datapasta)
+# install.packages(datapasta)
 
 ### load the google table with survey and rating sheet links
 drive_auth()
-
 
 gs4_auth() ## choose 0 and reauthorize if you're getting blocked
 
@@ -55,7 +60,7 @@ surveylookup <- readRDS("data/surveylookup.rds")
 
 # ###### use this to create survey ids if needed .............................
 ### same basic funtion as in create_surveyIDs_fun.R
-source("create_surveyIDs_fun.R", local = T)
+# source("create_surveyIDs_fun.R", local = T)
 source("utilities.R",local = T)
 schoolinfo <- schoolsTable %>% 
   select(cdeSchoolNumber, edLevel, schoolName, schoolNameShort)
@@ -192,7 +197,7 @@ surveylookup_wNew <- data.frame(
             ### a1. Some links won't paste as tribble or DF -- 1) cut the links from the table created above (leave the column header) and paste below the table you created. 2) Copy the main table. 3) Use `paste as DF` to paste the table code below...this will leave NAs where the links should be. 4)  Go back to your spread sheet, highlight and copy the links (do not include a header row), 5) Paste the links using "paste as vector" to replace the NAs in the df you've created by highlighting the c(NA....NA) of the 'link = ' vector.
 
 # select "data.frame(....)" and use Addins > "Paste as data.frame" to add your new lookup information
-surveylookup_wNew <- data.frame(
+surveylookup_wNew1 <- data.frame(
      stringsAsFactors = FALSE,
   school_fromFileName = c("CCMS","MCKI","CCHS",
                           "LINC","HARR","CES","WASH",NA,NA,NA,NA,"CCHS",
@@ -235,9 +240,99 @@ surveylookup_wNew <- data.frame(
     is.na(edLevel.x) ~ edLevel.y,
     TRUE ~ edLevel.x
   )) %>% ## fill in edLevel values from schoolinfo for school-specific data
-  select(-edLevel.x, -edLevel.y) %>% ## drop join-created columns
+  select(-edLevel.x, -edLevel.y) ## drop join-created columns
 
-  create_surveyID() ## this will remove duplicate surveys
+### check values of surveylookup entries
+##link = link to google file or path to local file
+# respondents : one of unique(surveylookup$respondents) --c("educator", "parent" ,  "student"  ,"raters" )
+# type: one of c("survey", "rating")
+# final: binary (1/0) whether the file is a final file or an intermediate file (intermediate files are not loaded in the current code)
+
+## The following function runs code to check for valid values.
+#' Title
+#'            NO ARGUMENTS -- you just need the surveylookup_wNew1 table in your environment
+#' @return -- message that identifies invalid values
+#' @export
+#'
+#' @examples
+runLookupCheck <- function() {
+  
+  respondentVec <- c("educator", "parent" ,  "student"  ,"raters" )
+  typeVec <- c("survey", "rating")
+  finalVec <- c(0,1)
+  cdeSchoolNumberVec <- c(unique(schoolsTable$cdeSchoolNumber), NA)
+  edLevelVec <- c("elementary", "middle", "high", "K-8", NA)
+  
+  respondentTest <- surveylookup_wNew1$respondents[!surveylookup_wNew1$respondents %in% respondentVec]
+  typeTest <- surveylookup_wNew1$type[!surveylookup_wNew1$type %in% typeVec]
+  finalTest <- surveylookup_wNew1$final[!surveylookup_wNew1$final %in% finalVec]
+  cdeSchoolNumberTest <- surveylookup_wNew1$cdeSchoolNumber[!surveylookup_wNew1$cdeSchoolNumber %in% cdeSchoolNumberVec]
+  edLevelTest <- surveylookup_wNew1$edLevel[!surveylookup_wNew1$edLevel %in% edLevelVec]
+  
+  ## get all the test names for checking
+  allTestNames <- c("respondentTest", "typeTest", "finalTest", "cdeSchoolNumberTest", "edLevelTest")
+  ## combine all tests for quick check
+  allTest <- c(respondentTest, typeTest, finalTest, cdeSchoolNumberTest, edLevelTest)
+  
+  
+#' Title
+#'
+#' @param colTestString string - name of column Test variable as a string
+#'
+#' @return message regarding validity of values in column
+#' @export
+#'
+#' @examples
+  reportValueTest <- function(colTestString) {
+    # colTestString = "typeTest"
+    # colTestString = "edLevelTest"
+    colName <- str_remove(colTestString, "Test")
+    colTest <- get(colTestString)
+    
+    if(length(colTest) == 0){
+      cat(glue::glue("Column `{colName}` has valid values.\n"))
+      cat("\n")
+    } else if(length(colTest) > 0) {
+      warning(glue::glue("|***Column `{colName}` has the following invalid value: `{colTest}`   "))
+  
+    }
+    
+  } ## end function
+ 
+  
+  ### check for valid values
+  if(sum(length(allTest)) == 0) {
+    colNames <- str_remove(allTestNames, "Test")
+    print(glue::glue("Values for `{colNames}` are all valid."))
+  } else if(sum(length(allTest)) > 0) {
+    
+    ## find the values that are incorrect with reportValueTest
+    walk(allTestNames, reportValueTest) 
+    warning("Errors found: You can fix these using the editData addin.")
+  }
+  return(allTest)
+}
+
+## Check lookup for valid values
+allTest <- runLookupCheck()
+
+## If there are errors, fix invalid values with edit data (the previous code listed invalid values in a warning message)
+if(sum(length(allTest)) > 0) {
+  require(editData)
+  surveylookup_wNew1 <- editData(surveylookup_wNew1)
+}
+
+## If there were errors re-Check lookup after using editData
+if(sum(length(allTest)) > 0) {
+  allTest <- runLookupCheck()
+}
+
+
+
+### finalize new entries to the lookup table 
+## !!!! IMPORTANT !!!! this will remove duplicate surveys  Previously saved data associated with duplicate surveys will be overwritten in this table and in the surveyResponses and ratingResponses tables when the extraction process for surveys and ratings is run below.
+surveylookup_wNew <- surveylookup_wNew1 %>% 
+  create_surveyID() 
 
 
 
@@ -338,12 +433,13 @@ readSurveyData <- function(fileID,
                            surveyMonkey,
                            .demoQ_text = demoQ_text,
                            .schoolQ_text = schoolQ_text) {
-  # fileID= surveyProcessInfo$fileID[1]
-  # schoolNumber=surveyProcessInfo$schoolNumber[1]
-  # surveyMonkey=surveyProcessInfo$surveyMonkey[1]
+  # counter <- 3
+  # fileID= surveyProcessInfo$fileID[counter]
+  # schoolNumber=surveyProcessInfo$schoolNumber[counter]
+  # surveyMonkey=surveyProcessInfo$surveyMonkey[counter]
   # .demoQ_text = demoQ_text
   # .schoolQ_text = schoolQ_text
-  #
+
   
   ##clean up extra characters that may have been generated by encoding the file name string
   fileID <- iconv(fileID, "", "ASCII", sub = " ")
@@ -377,7 +473,7 @@ readSurveyData <- function(fileID,
     datapath <- fileID #setting so that this can be used
     fileName <- sheetInfo$name
     
-    seconds <- sample(x = 2:15, size = 1, replace=TRUE) ## set a 60-100 second time out to trick google into 
+    seconds <- sample(x = 1:5, size = 1, replace=TRUE) ## set a 1-5 second time out to trick google into 
     # not shutting down our access.
     print(glue("First sleep: Sleeping {seconds} seconds to make it difficult for Google to determine we are using a machine."))
     Sys.sleep(seconds)
@@ -390,7 +486,7 @@ readSurveyData <- function(fileID,
         paste(sheetNames, collapse = " | ")
       )
     }
-    seconds <- sample(x = 2:15, size = 1, replace=TRUE) ## set a 60-100 second time out to trick google into 
+    seconds <- sample(x = 1:5, size = 1, replace=TRUE) ## set a 1-5 second time out to trick google into 
     # not shutting down our access.
     print(glue("Second sleep: Sleeping {seconds} seconds to make it difficult for Google to determine we are using a machine."))
     Sys.sleep(seconds)
@@ -527,18 +623,20 @@ readSurveyData <- function(fileID,
       joinSchools <- surveyDataLong %>%
         filter(qText == schoolQ,!is.na(response)) %>% #just get the response to the school Q
         distinct(respondentID, response) %>% ## get table with respondentID and selected school
-        mutate(
-          cdeSchoolNumber = case_when(
-            str_detect(tolower(response), "canon city e.*|.*exploratory.*|ces") ~ "7950",
-            str_detect(tolower(response), "canon city m.*|.*ccms.*") ~ "1262",
-            str_detect(tolower(response), "canon city h.*|.*cchs.*") ~ "1266",
-            str_detect(tolower(response), ".*harrison.*") ~ "3802",
-            str_detect(tolower(response), ",*mckinley.*") ~ "5704",
-            str_detect(tolower(response), ".*lincoln.*") ~ "5166",
-            str_detect(tolower(response), ".*washington.*") ~ "9248"
-          )
-        ) %>%  # create cdeSchoolNumber from responses
-        select(-response)
+        mutate(response = tolower(response)) %>% 
+        # mutate(
+        #   cdeSchoolNumber = case_when(
+        #     str_detect(tolower(response), "canon city e.*|.*exploratory.*|ces") ~ "7950",
+        #     str_detect(tolower(response), "canon city m.*|.*ccms.*") ~ "1262",
+        #     str_detect(tolower(response), "canon city h.*|.*cchs.*") ~ "1266",
+        #     str_detect(tolower(response), ".*harrison.*") ~ "3802",
+        #     str_detect(tolower(response), ".*mckinley.*") ~ "5704",
+        #     str_detect(tolower(response), ".*lincoln.*") ~ "5166",
+        #     str_detect(tolower(response), ".*washington.*") ~ "9248"
+        #   )
+        # ) %>%  # create cdeSchoolNumber from responses
+      regex_left_join(select(schoolsTable, cdeSchoolNumber, schoolRegex), by = c("response" = "schoolRegex")) %>% 
+        select(-response, -schoolRegex)
       ## add school by joining on respondentID
       surveyData <- surveyDataLong %>%
         left_join(joinSchools, by = "respondentID")
@@ -617,6 +715,7 @@ surveyProcessInfo <- readRDS("data/surveylookup.rds") %>%
 ###### LOOP across file IDs
 surveyProcessed <- pmap(surveyProcessInfo, readSurveyData)
 
+
 #extract the table and bind rows
 ## map()-ing across all elements of the list to pull surveyData out...then bind_rows()
 surveyResponses_to_add <- map(.x=1:length(surveyProcessed), .f = ~surveyProcessed[[.x]]$surveyData) %>% 
@@ -625,14 +724,19 @@ surveyResponses_to_add <- map(.x=1:length(surveyProcessed), .f = ~surveyProcesse
 surveyQlookup_to_add <- map(.x = 1:length(surveyProcessed), .f = ~surveyProcessed[[.x]]$surveyQlookup) %>% 
   bind_rows()
 
+#look over the surveyResponses and the surveyQlookup tables
+View(surveyResponses_to_add)
+View(surveyQlookup_to_add)
+
 ############# insert read SURVEY data into main data files #################
 
 
 ###### 3.  SAVE file after running 2. ....................
+## get the surveyResposes and surveyQlookup data that already exists
 surveyResponses_archived <- readRDS("data/surveyResponses.rds")
 surveyQlookup_archived <- readRDS("data/surveyQlookup.rds") 
 
-## Get all the surveyIDs of the surveys you are adding
+## Get all the surveyIDs of the surveys you are going to add to the file
 filterTable <- surveyResponses_to_add %>% 
   distinct(surveyID)
 #remove remove these responses from surveyResponses if they have already been loaded and  
@@ -708,10 +812,10 @@ optionsQlookup <- read.csv("data/optionsQlookup.csv") %>%
 
 View(optionsQlookup)
 
-wait... # don't run this unless you've checked that every thing is correct. THis line will throw an error
-
 
 checked <- menu(c("I haven't checked","I have checked"),  title = "Have you checked the optionsQlookup file?")
+
+#Resume here after confirming you checked the file
 
 if(checked == 2){
   saveRDS(optionsQlookup, "data/optionsQlookup.rds")
@@ -833,9 +937,16 @@ surveylookup <- readRDS("data/surveylookup.rds") ## we filter this for ratings b
 #' sheet_selected <- "Improvement of Instruction"
 extractRatingSheet <- function(datapath, sheet_selected= sheetsList[[1]], schoolNumberFromLookup = schoolNumber) {
 
-  ratingData <- range_read(datapath, skip = 2, sheet = sheet_selected)
   
-  seconds <- sample(x = 40:80, size = 1, replace=TRUE) ## set a 40-80 second time out to trick google into 
+  # datapath = ratingLoopTable$dataPath[1]
+  # sheet_selected = "Postive Student Behavior"
+  # schoolNumberFromLookup = ratingLoopTable$schoolNumber[1]
+  # 
+  
+  ratingData <- range_read(datapath, skip = 2, sheet = sheet_selected)
+  print(glue::glue("Extracting sheet for school number: {schoolNumberFromLookup}"))
+  
+  seconds <- sample(x = 10:50, size = 1, replace=TRUE) ## set a 10-80 second time out to trick google into 
   # not shutting down our access.
   print(glue("Sleeping {seconds} seconds to make it difficult for Google to determine we are using a machine and to avoid overrunning quotas."))
   Sys.sleep(seconds)
@@ -919,12 +1030,12 @@ getDataFromAllSheets <-
            final = ratingLoopTable$final[1],
            schoolNumber = ratingLoopTable$schoolNumber[1],
            surveyID = ratingLoopTable$surveyID[1]) {
-    dataPath = ratingLoopTable$dataPath[1]
-    endyear = ratingLoopTable$endyear[1]
-    dimensions = ratingDimensions
-    final = ratingLoopTable$final[1]
-    schoolNumber = ratingLoopTable$schoolNumber[1]
-    surveyID = ratingLoopTable$surveyID[1]
+    # dataPath = ratingLoopTable$dataPath[1]
+    # endyear = ratingLoopTable$endyear[1]
+    # dimensions = ratingDimensions
+    # final = ratingLoopTable$final[1]
+    # schoolNumber = ratingLoopTable$schoolNumber[1]
+    # surveyID = ratingLoopTable$surveyID[1]
     
     # dataPath = "https://docs.google.com/spreadsheets/d/1UXfsN_n7QO8z0vhiYwnNrfI1_uh57aFQyMKOmd1uK8U/edit#gid=1136102995"
     # endyear = 2023
@@ -961,7 +1072,7 @@ getDataFromAllSheets <-
     
     
     ## extract each sheet of the file and combine into a long table using extractRatingSheet()
-    map(sheetsList, extractRatingSheet, datapath = sheetInfo) %>%
+    map(sheetsList, extractRatingSheet, datapath = sheetInfo, schoolNumberFromLookup = schoolNumber) %>%
       bind_rows() %>%
       mutate(
         endYear = endyear,
@@ -973,7 +1084,12 @@ getDataFromAllSheets <-
   }
 
 
-#test <- getDataFromAllSheets()
+# test <- getDataFromAllSheets(dataPath = ratingLoopTable$dataPath[2],
+#                              endyear = ratingLoopTable$endyear[2],
+#                              dimensions = ratingDimensions,
+#                              final = ratingLoopTable$final[2],
+#                              schoolNumber = ratingLoopTable$schoolNumber[2],
+#                              surveyID = ratingLoopTable$surveyID[2]) 
 
 ### creating vector of sheet names (rating dimensions)  to look for (an argument in the function)
 ## I've included these warnings to call attention to manual checking that should be going on 
@@ -997,10 +1113,10 @@ if(lubridate::week(Sys.Date())<33){ ##week 33 is mid-August
 
 ratingendyear <- surveyendyear
 ## or -- if running a back year...specify as below
-# ratingendyear <- 2022:2024
-ratingendyear <- 2022
-ratingendyear <- 2023
-ratingendyear <- 2024
+# ratingendyear <- 2023:2024
+# ratingendyear <- 2022
+# ratingendyear <- 2023
+# ratingendyear <- 2024
 
 if (reloadAllRatings == TRUE){
   ratingLoopTable <- surveylookup %>% 
@@ -1014,7 +1130,7 @@ if (reloadAllRatings == TRUE){
       filter(type == "rating", final == 1, endYear %in% ratingendyear) %>%
       select(dataPath = link, endyear = endYear, final, schoolNumber = cdeSchoolNumber, surveyID)
   View(ratingLoopTable)
-  stop("You need to stop and check ratingLoopTable to make sure you are loading the correct subset of the rating forms.")
+  warning("You need to stop and check ratingLoopTable to make sure you are loading the correct subset of the rating forms.")
 }
 
 
@@ -1070,14 +1186,15 @@ if(reloadAllRatings == FALSE){ ## make sure you don't create duplicate ratings a
 View(ratingResponses)
 
 ### save ratings
+{ 
 saveRatings <- menu(choices = c("I'm ready to save!", "Don't save."), 
                     title = "Save the updated ratingResponses file?\nYou can type `0` or ESC to exit.")
- 
+ ## return here after responding to prompt.
 if(saveRatings == 1){
   saveRDS(ratingResponses, "data/ratingResponses.rds")
   print("Rating responses saved as data/ratingResponses.rds")
 } else if(saveRatings == 2) print("Updated ratingResponses NOT saved.")
-
+}
 
 stop("You have completed survey and rating data processing.")
 

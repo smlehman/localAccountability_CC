@@ -727,9 +727,11 @@ output$ratinglong <- renderGirafe({
     
     print("In surveyResponse filter")
     validate(need(length(input$yearSelect)>0, "You must select at least one year."))
+    years <- input$yearSelect
+    # years <- 2021:2024
     ### create dataset with joined tables for plotting
     surveyResponses_filter <- surveylookup %>% 
-      filter(endYear %in% input$yearSelect) %>% 
+      filter(endYear %in% years) %>% 
       ungroup() %>% 
       select(-cdeSchoolNumber, -schoolName, -schoolNameShort) %>% #dropping school from surveylookup because some surveys cover multiple schools...join school info to the cdeschoolnumber in survey responses 
       filter(type == "survey") %>% 

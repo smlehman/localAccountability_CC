@@ -11,15 +11,13 @@
 
 ###---add shinyjqui for showing/hiding, 
 # # library(shinyjqui) ##  !!!!!conflict with ggiraph... interactive graphs show double tooltip boxes
-# packages <- c('ggrepel', 'ggthemes', 'RColorBrewer', 'shinyjs', 'shiny', 'shinydashboard', 'shinydashboardPlus', 'DT', 'shinycssloaders', 'shinyWidgets', 'lazyeval', 'ggiraph', 'randomNames', 'htmlwidgets', 'lubridate', 'fst', 'emojifont', 'tidyverse')
-
+# packages <- c('ggrepel', 'ggthemes', 'RColorBrewer', 'shinyjs', 'shiny', 'shinydashboard', 'shinydashboardPlus', 'DT', 'shinycssloaders', 'shinyWidgets', 'lazyeval', 'ggiraph', 'randomNames', 'htmlwidgets', 'lubridate', 'fst', 'emojifont', 'tidyverse', 'fuzzyjoin')
 
 
 
 library(shinyjs) ## usse to add javascript functionality (show/hide, change inputs, reset,etc.)https://deanattali.com/shinyjs/
 library(shiny) 
 library(shinydashboard) 
-# library(shinydashboardPlus)
 library(bslib)
 library(thematic)
 library(data.table) ##super fast data handling
@@ -28,15 +26,11 @@ library(tidyverse)
 library(lubridate) 
 # library(DT)   #library(RColorBrewer)
 library(reactable)
-# library(shinycssloaders)
 library(shinyWidgets)  # widget formatting  https://dreamrs.github.io/shinyWidgets/  --see examples run shinyWidgetsGallery()
-# library(lazyeval) 
 library(ggiraph)
-# library(randomNames)
-# library(htmlwidgets) 
 library(glue) 
 library(fst)
-# library(emojifont)
+
 # library (patchwork)
 # library (sodium) ## needed for hashing and reading passwords
 
@@ -47,15 +41,15 @@ library(fst)
 # print(list.files(recursive = TRUE))
 
 schoolsTable <-  tibble::tribble(
-                                 ~schoolName, ~cdeSchoolNumber, ~schoolNameShort,     ~edLevel,
-                    "Canon City High School",            1266L,           "CCHS",       "high",
-                  "Canon City Middle School",            1262L,           "CCMS",     "middle",
-                  "Canon Exploratory School",            7950L,            "CES", "elementary",
-                           "Harrison School",            3802L,       "Harrison",        "K-8",
-  "Lincoln School of Science and Technology",            5166L,        "Lincoln", "elementary",
-                "McKinley Elementary School",            5704L,       "McKinley", "elementary",
-              "Washington Elementary School",            9248L,     "Washington", "elementary",
-  "Mount View Core Knowledge Charter School",            6752L,     "Mount View",       "K-8"
+                                 ~schoolName, ~cdeSchoolNumber, ~schoolNameShort,     ~edLevel,     ~schoolRegex,
+                    "Canon City High School",            1266L,           "CCHS",       "high", ".*canon city h.*|.*cchs.*",
+                  "Canon City Middle School",            1262L,           "CCMS",     "middle", ".*canon city m.*|.*ccms.*",
+                  "Canon Exploratory School",            7950L,            "CES", "elementary", "canon city e.*|.*exploratory.*|ces", 
+                           "Harrison School",            3802L,       "Harrison",        "K-8", ".*harrison.*|harr",
+  "Lincoln School of Science and Technology",            5166L,        "Lincoln", "elementary", ".*lincoln.*|.*lsst.*",
+                "McKinley Elementary School",            5704L,       "McKinley", "elementary", ".*mckinley.*|.*mcki.*",
+              "Washington Elementary School",            9248L,     "Washington", "elementary", ".*washington.*|.*wash.*",
+  "Mount View Core Knowledge Charter School",            6752L,     "Mount View",       "K-8",  ".*mount view.*|.*mountain view.*|>*core.*|.*mvck.*"
   ) %>% 
   mutate(cdeSchoolNumber = as.character(cdeSchoolNumber)) %>% 
   arrange(schoolName)
