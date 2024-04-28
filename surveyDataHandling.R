@@ -758,7 +758,7 @@ surveyResponses <- readRDS("data/surveyResponses.rds")
 surveyQlookup <- readRDS("data/surveyQlookup.rds")
 
 ####################################################################.
-############ add DEMOS to surveyResponses  #################
+############ add DEMOS/SurveyOptions for surveyResponses  ##########
 ####################################################################.
 #### create options table
 warning("Skip past option table if options have already been set")
