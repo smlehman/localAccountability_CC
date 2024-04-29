@@ -166,29 +166,29 @@ create_surveyID <- function(data, lookupTable = surveylookup) {
 ### datapasta in the table you've created in a spreadsheet
 
 
-## This is just an EXAMPLE  it is overwritten in the nex code block __________________________________
-surveylookup_wNew <- data.frame(
-     stringsAsFactors = FALSE,
-  school_fromFileName = c("CCMS", "MCKI", "CCHS"),
-                 link = c("https://docs.google.com/spreadsheets/d/1S4f00m2wXOdD5XcWBWp6ITS88F06Ahr7BcZlZfZzDeM/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1KtGSScDTeniOyx2vu8ZxQgX9niAhAB-Hx1Duig-vFbE/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1_0xJPqwSrJF087-5CgE6oTiVgNVjmmeZXeHhow1oPec/edit#gid=167419926")
-,
-      cdeSchoolNumber = c(1262L, 5704L, 1266L),
-          respondents = c("raters", "raters", "raters"),
-                 type = c("rating", "rating", "rating"),
-              endYear = c(2023L, 2023L, 2023L),
-                final = c(1L, 1L, 1L),
-              edLevel = c(NA, NA, NA),
-         surveyMonkey = c(FALSE, FALSE, FALSE)
-) %>% 
-  mutate(cdeSchoolNumber = as.character(cdeSchoolNumber)) %>% 
-  left_join(schoolinfo, by = "cdeSchoolNumber") %>% ## add in school information
-  mutate(edLevel = case_when(
-    is.na(edLevel.x) ~ edLevel.y,
-    TRUE ~ edLevel.x
-  )) %>% ## fill in edLevel values from schoolinfo for school-specific data
-  select(-edLevel.x, -edLevel.y) %>% ## drop join-created columns
+## This is just an EXAMPLE  it is overwritten in the next code block __________________________________
+# surveylookup_wNew <- data.frame(
+#      stringsAsFactors = FALSE,
+#   school_fromFileName = c("CCMS", "MCKI", "CCHS"),
+#                  link = c("https://docs.google.com/spreadsheets/d/1S4f00m2wXOdD5XcWBWp6ITS88F06Ahr7BcZlZfZzDeM/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1KtGSScDTeniOyx2vu8ZxQgX9niAhAB-Hx1Duig-vFbE/edit#gid=167419926", "https://docs.google.com/spreadsheets/d/1_0xJPqwSrJF087-5CgE6oTiVgNVjmmeZXeHhow1oPec/edit#gid=167419926")
+# ,
+#       cdeSchoolNumber = c(1262L, 5704L, 1266L),
+#           respondents = c("raters", "raters", "raters"),
+#                  type = c("rating", "rating", "rating"),
+#               endYear = c(2023L, 2023L, 2023L),
+#                 final = c(1L, 1L, 1L),
+#               edLevel = c(NA, NA, NA),
+#          surveyMonkey = c(FALSE, FALSE, FALSE)
+# ) %>% 
+#   mutate(cdeSchoolNumber = as.character(cdeSchoolNumber)) %>% 
+#   left_join(schoolinfo, by = "cdeSchoolNumber") %>% ## add in school information
+#   mutate(edLevel = case_when(
+#     is.na(edLevel.x) ~ edLevel.y,
+#     TRUE ~ edLevel.x
+#   )) %>% ## fill in edLevel values from schoolinfo for school-specific data
+#   select(-edLevel.x, -edLevel.y) ## drop join-created columns
   
-  create_surveyID() ## this will remove duplicate surveys
+  
 
 ### Code to paste datapasta-ed table into. It's same as code above...
 ### 1. highlight/delete **PASTE_DATAPASTA_HERE** 
@@ -197,6 +197,9 @@ surveylookup_wNew <- data.frame(
             ### a1. Some links won't paste as tribble or DF -- 1) cut the links from the table created above (leave the column header) and paste below the table you created. 2) Copy the main table. 3) Use `paste as DF` to paste the table code below...this will leave NAs where the links should be. 4)  Go back to your spread sheet, highlight and copy the links (do not include a header row), 5) Paste the links using "paste as vector" to replace the NAs in the df you've created by highlighting the c(NA....NA) of the 'link = ' vector.
 
 # select "data.frame(....)" and use Addins > "Paste as data.frame" to add your new lookup information
+
+utils::browseURL("https://docs.google.com/spreadsheets/d/1C0Q6tCJxbOisMxdaoUSGi3AiTSjrKw9ZR88V_kMFG4s/edit?usp=sharing")
+
 surveylookup_wNew1 <- data.frame(
      stringsAsFactors = FALSE,
   school_fromFileName = c("CCMS","MCKI","CCHS",
@@ -1199,63 +1202,63 @@ if(saveRatings == 1){
 stop("You have completed survey and rating data processing.")
 
 
-# End Data Processing... --------------------------------------------------
-
-
-##  code below is for exploring the data  -- no need to run if you are just cleaning 
-## data for the app.
-
-# Summarizing functions from Shiny app ------------------------------------
-##code that was created in the process of creating the application.
-source("app.R", local = TRUE)
-source("utilities.R",local = T)
-#rating summary for the entire district across all constructs
-test <- process_ratingData(level = "subconstruct", schoolNum = "3802", selectedconstruct="Assessment Practices")
-test <- process_ratingData(level = "construct", schoolNum = "3802", selectedconstruct=NA)
-test <- process_ratingData(level = "overall", schoolNum = "3802", selectedconstruct=NA)
-
-
-
-
-### survey summaries-- 
-
-### create dataset with joined tables for plotting
-surveyResponses_filter <- surveylookup %>% 
-  ungroup() %>% 
-  select(-cdeSchoolNumber, -schoolName, -schoolNameShort) %>% #dropping school from surveylookup because some surveys cover multiple schools...join school info to the cdeschoolnumber in survey responses 
-  filter(type == "survey") %>% 
-  
-  inner_join(surveyResponses) %>% #, by = c("link"= "fileAddress",  "endYear")
-  left_join(select(schoolsTable, -edLevel), by = c("cdeSchoolNumber")) %>% ## add school names to each response
-  inner_join(surveyQlookup) %>% #, by = c("link" = "fileAddress", "qText", "endYear", "fileAddress")
-  left_join(optionsQlookup, by = c("response", "qText", "qName"))
-
-surveyRespondents <- "parent" # any of these three c("parent","student", "educator")
-surveyRespondents <- "student"# any of these three c("parent","student", "educator")
-
-##set grouping variables
-xAxis <- 'endYear' ## can use endYear or schoolNameShort __ this is often flipped in ggplot so it turns into the y-axis
-
-grouper <- c(xAxis, "respondents")
-# or 
-grouper <- c(xAxis, "edLevel")
-
-## for schools on the x axis
-xAxis <- 'schoolNameShort' 
-
-grouper <- c("endYear", "respondents", xAxis)
-
-## for questions on the x axis
-xAxis <- 'qName'
-tagalongs <- c("qNum",  "qText")
-grouper <- c("endYear", 'schoolNameShort', "edLevel",  xAxis, tagalongs)
-
-
-# this will run the combinations above
-test <-  process_surveyData(data = surveyResponses_filter, .grouper = grouper, .surveyRespondents = surveyRespondents)
-
-
-
+# # End Data Processing... --------------------------------------------------
+# 
+# 
+# ##  code below is for exploring the data  -- no need to run if you are just cleaning 
+# ## data for the app.
+# 
+# # Summarizing functions from Shiny app ------------------------------------
+# ##code that was created in the process of creating the application.
+# source("app.R", local = TRUE)
+# source("utilities.R",local = T)
+# #rating summary for the entire district across all constructs
+# test <- process_ratingData(level = "subconstruct", schoolNum = "3802", selectedconstruct="Assessment Practices")
+# test <- process_ratingData(level = "construct", schoolNum = "3802", selectedconstruct=NA)
+# test <- process_ratingData(level = "overall", schoolNum = "3802", selectedconstruct=NA)
+# 
+# 
+# 
+# 
+# ### survey summaries-- 
+# 
+# ### create dataset with joined tables for plotting
+# surveyResponses_filter <- surveylookup %>% 
+#   ungroup() %>% 
+#   select(-cdeSchoolNumber, -schoolName, -schoolNameShort) %>% #dropping school from surveylookup because some surveys cover multiple schools...join school info to the cdeschoolnumber in survey responses 
+#   filter(type == "survey") %>% 
+#   
+#   inner_join(surveyResponses) %>% #, by = c("link"= "fileAddress",  "endYear")
+#   left_join(select(schoolsTable, -edLevel), by = c("cdeSchoolNumber")) %>% ## add school names to each response
+#   inner_join(surveyQlookup) %>% #, by = c("link" = "fileAddress", "qText", "endYear", "fileAddress")
+#   left_join(optionsQlookup, by = c("response", "qText", "qName"))
+# 
+# surveyRespondents <- "parent" # any of these three c("parent","student", "educator")
+# surveyRespondents <- "student"# any of these three c("parent","student", "educator")
+# 
+# ##set grouping variables
+# xAxis <- 'endYear' ## can use endYear or schoolNameShort __ this is often flipped in ggplot so it turns into the y-axis
+# 
+# grouper <- c(xAxis, "respondents")
+# # or 
+# grouper <- c(xAxis, "edLevel")
+# 
+# ## for schools on the x axis
+# xAxis <- 'schoolNameShort' 
+# 
+# grouper <- c("endYear", "respondents", xAxis)
+# 
+# ## for questions on the x axis
+# xAxis <- 'qName'
+# tagalongs <- c("qNum",  "qText")
+# grouper <- c("endYear", 'schoolNameShort', "edLevel",  xAxis, tagalongs)
+# 
+# 
+# # this will run the combinations above
+# test <-  process_surveyData(data = surveyResponses_filter, .grouper = grouper, .surveyRespondents = surveyRespondents)
+# 
+# 
+# 
 
 
 
