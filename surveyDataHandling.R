@@ -319,10 +319,15 @@ runLookupCheck <- function() {
 ## Check lookup for valid values
 allTest <- runLookupCheck()
 
-## If there are errors, fix invalid values with edit data (the previous code listed invalid values in a warning message)
+## If there are errors, fix invalid values using editData. (the previous code listed invalid values in a warning message)
 if(sum(length(allTest)) > 0) {
+  # utils::browseURL("https://docs.google.com/spreadsheets/d/1C0Q6tCJxbOisMxdaoUSGi3AiTSjrKw9ZR88V_kMFG4s/edit?usp=sharing")
+  
+  ### Using editData... the regex characters in the google links cause errors when using the buttons...just edit individual cells
   require(editData)
   surveylookup_wNew1 <- editData(surveylookup_wNew1)
+  
+  warning("editData will error out if you try to use the buttons (e.g., `Edit`).  Only edit information in cells by double clicking individual cells and then click `Done` when finished.")
 }
 
 ## If there were errors re-Check lookup after using editData
