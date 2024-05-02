@@ -697,6 +697,7 @@ readSurveyData <- function(fileID,
 #### 1A -- FOR DATA SAVED TO GOOGLE SHEETS USE THIS .......................
 
 ## Set year to extract
+warning(" You are about to set the year(s) of survey data that will be extracted. Choose one of the lines of code below.")
 
 endYear_vec <-  2024 # specify if you want to load only one year
 ### or ##
@@ -1122,6 +1123,8 @@ ratingDimensions <- c("Climate","Health","Innovative Instruction", "Equity of Op
 print(ratingDimensions)
 warning("You need to check to make sure that the rating dimension above have not changed this year. ", paste(ratingDimensions, collapse = " | "))
 
+
+warning(" You are about to set the year(s) of rating data that will be extracted. \n*Set the reloadAllRating variable and the ratingendyear variables below. \nThere are a number of commented out ratingendyear options that can be run or modified")
 #create a table with function parameters to loop through to run data extraction the rating sheets
 ## setting a binary -- Should the code below rerun (and overwrite) all rating data (TRUE) or just 
 ## the newly loaded data (FALSE)
