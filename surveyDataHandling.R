@@ -374,7 +374,7 @@ surveylookup <- readRDS("data/surveylookup.rds")
 warning("review new questions to ensure that the regex below will catch the school Q's and the demo Q's")  ## You'll need to know a little about regular expressions (regex)  - https://www.regular-expressions.info/tutorial.html
 
 ### Regex to recognize demographic and school questions. This is used in the readSurveyData function
-demoQ_text <- tolower(c("What grade|Which Pathway|I am.*"))
+demoQ_text <- tolower(c("What grade|Which Pathway|I am|I am.*"))
 schoolQ_text <-  "i go to school at.*|i attend.*|what is your school.*|please select your school.*|what school does your child attend.*|please select your school.*"
 
 
@@ -697,6 +697,7 @@ readSurveyData <- function(fileID,
 #### 1A -- FOR DATA SAVED TO GOOGLE SHEETS USE THIS .......................
 
 ## Set year to extract
+
 endYear_vec <-  2024 # specify if you want to load only one year
 ### or ##
 endYear_vec <-  NULL  # specify NA if you want to load all
@@ -706,7 +707,7 @@ surveyProcessInfo <- readRDS("data/surveylookup.rds") %>%
   {if(length(endYear_vec)>0) filter(.,endYear  %in% endYear_vec) else . } %>% ## get a specific year if thats what we want
   select(fileID = link, schoolNumber = cdeSchoolNumber, surveyMonkey) 
  
-
+View(surveyProcessInfo)
 
 
 
@@ -733,8 +734,11 @@ surveyQlookup_to_add <- map(.x = 1:length(surveyProcessed), .f = ~surveyProcesse
   bind_rows()
 
 #look over the surveyResponses and the surveyQlookup tables
+warning("Check responses and Q lookup.  If there are questions that are assigned as demo questions that aren't you can reset them using the editData code below.")
 View(surveyResponses_to_add)
 View(surveyQlookup_to_add)
+
+#  surveyQlookup_to_add <- editData(surveyQlookup_to_add)
 
 ############# insert read SURVEY data into main data files #################
 
@@ -830,7 +834,7 @@ if(checked == 2){
   print("optionsQlookup.rds has been saved")
   } else stop("optionsQlook.rds not saved!!!  You need to select `I have checked` to save the file")
 
-
+optionsQlookup <- readRDS( "data/optionsQlookup.rds")
 
 
 #### set up Demos for joining - start here #############
@@ -847,15 +851,6 @@ surveyResponses_filter <- surveylookup %>%
 
 
 
-surveyResponses_filter <- surveylookup %>% 
-  ungroup() %>% 
-  select(-cdeSchoolNumber, -schoolName, -schoolNameShort) %>% #dropping school from surveylookup because some surveys cover multiple schools...join school info to the cdeschoolnumber in survey responses 
-  filter(type == "survey") %>% 
-  inner_join(surveyResponses) %>% #, by = c("link"= "fileAddress",  "endYear")
-  left_join(select(schoolsTable, -edLevel), by = c("cdeSchoolNumber")) %>% ## add school names to each response
-  inner_join(surveyQlookup) %>% #, by = c("link" = "fileAddress", "qText", "endYear", "fileAddress")
-  left_join(optionsQlookup, by = c("response", "qText", "qName"))
-
 
 # test <- surveyResponses_filter %>% 
 #   filter(edLevel == "middle", is.na(cdeSchoolNumber)) %>% 
@@ -869,7 +864,7 @@ demosTable <- surveyResponses_filter %>%
   arrange( qText) %>% 
   mutate(displayResponse = case_when(
     response == "A Girl" ~ "Female",
-    response == "A Boy" ~ "Male",
+    response %in% c("A Boy","A boy") ~ "Male",
     response == "Support Staff member" ~ "Support Staff Member", 
     TRUE ~ response
   ),
@@ -879,13 +874,19 @@ demosTable <- surveyResponses_filter %>%
     displayResponse == "I prefer not to answer this question" ~ 3,
     TRUE ~ as.numeric(str_extract(response, "\\d+"))),
   displayName = case_when(
-    qText == "I am" ~ "Gender",
+    qText %in% c("I am", "I am...")  ~ "Gender",
     qText == "I am a..." ~ "Role",
     str_detect(tolower(qText), "grade")~ "Grade",
     str_detect(tolower(qText), "pathway") ~ "Pathway"
   )
   ) %>% 
   arrange(qText, responseOrder, displayResponse)
+
+View(demosTable)
+### If you want/need to edit the table directly, you can open it with the following commented code.
+#  demosTable <- editData(demosTable)
+
+
 
 saveRDS(demosTable, "data/demosTable.rds")
 demosTable <- readRDS("data/demosTable.rds")

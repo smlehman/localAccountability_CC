@@ -196,7 +196,7 @@ ui <- tagList(
        
     ),      
     ## end title  
-    header = tagList(absolutePanel(top = "0.5em", right = "1em" , tags$style(type='text/css', ".selectize-input { padding: 2px; min-height: 0; font-size: 12px;} .selectize-dropdown { line-height: 9px; font-size: 12px; padding: 3px;}"),
+    header = tagList(absolutePanel(top = "0.5em", right = "3em" , tags$style(type='text/css', ".selectize-input { padding: 2px; min-height: 0; font-size: 12px;} .selectize-dropdown { line-height: 9px; font-size: 12px; padding: 3px;}"),
                                    # uiOutput("yearSelect") 
                                    ### selectInput for years
                                    tagList( div(
@@ -212,7 +212,7 @@ ui <- tagList(
                                        selected = surveyYears[1:4] , 
                                        multiple = T,
                                        # selectize = TRUE,
-                                       width = "200px"
+                                       width = "175px"
                                        # , 
                                        # class = "dropdown" #needed if inserting in shinydashboard header
                                      ) 
