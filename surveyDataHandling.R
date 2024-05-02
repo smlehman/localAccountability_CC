@@ -882,6 +882,18 @@ demosTable <- surveyResponses_filter %>%
   ) %>% 
   arrange(qText, responseOrder, displayResponse)
 
+
+warning("Check to see if there are questions identified that are NOT demo questions. \n 
+        If you find questions that are not demo questions... \n 
+        1) highlight the following text and then hit CMD/CTL+F  < surveyQlookup_to_add <- editData(surveyQlookup_to_add)  >\n
+        2) Run that code and search the data for the text of the question.\n
+        3) Once found, change the demoQ field from 1 to 0.\n
+        4) Click done on the editData window.\n
+        5) Rerun code back to this point. The question should be removed from demosTable\n
+        6) Save the demosTable with the saveRDS() code below.")
+## NOTE: If a non-demo question appears here, then the demoQ_text regex we used 
+## to ID demos is now matching a question and we should think about adjusting the 
+## regex or using a new process for identifying demographic questions. 
 View(demosTable)
 ### If you want/need to edit the table directly, you can open it with the following commented code.
 #  demosTable <- editData(demosTable)
